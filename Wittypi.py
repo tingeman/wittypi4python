@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: UTF-8 -*-
 
+#original from https://github.com/marl2en/wittypi4python
+
 """
 library for WittyPi 3 mini
 Version 3.11
@@ -9,6 +11,11 @@ Version 3.11
 name = "wittypi"
 __version__ = '0.0.5'
 # pip3 install smbus2
+# pip3 install pytz
+
+import logging
+from logging.handlers import RotatingFileHandler
+logger = logging.getLogger('WittyPi')
 
 
 
@@ -16,7 +23,9 @@ import datetime as dt
 import calendar
 import time
 import pytz
-local_tz = pytz.timezone('Europe/Stockholm')
+
+local_tz = dt.datetime.utcnow().astimezone().tzinfo
+#local_tz = pytz.timezone('Europe/Stockholm')
 utc_tz = pytz.timezone('UTC')
 
 from smbus2 import SMBus
@@ -32,9 +41,10 @@ def dec2hex(datalist):
 
 RTC_ADDRESS = 0x68
 I2C_MC_ADDRESS = 0x69
+
+I2C_ID=0
 I2C_VOLTAGE_IN_I=1
 I2C_VOLTAGE_IN_D=2
-
 I2C_VOLTAGE_OUT_I=3
 I2C_VOLTAGE_OUT_D=4
 I2C_CURRENT_OUT_I=5
@@ -56,6 +66,48 @@ HALT_PIN=4    # halt by GPIO-4 (BCM naming)
 SYSUP_PIN=17
 
 
+def is_rtc_connected():
+    try:
+        out=[]
+        with SMBus(1) as bus:
+            b = bus.read_byte(RTC_ADDRESS)
+            out.append(b)
+        return True
+    except IOError as ex:
+        if str(ex) == "[Errno 121] Remote I/O error":
+            return False
+    except Exception as ex:
+        logger.exception("Exception in is_rtc_connected")
+
+def is_mc_connected():
+    try:
+        out=[]
+        with SMBus(1) as bus:
+            b = bus.read_byte(I2C_MC_ADDRESS)
+            out.append(b)
+        return True
+    except IOError as ex:
+        if str(ex) == "[Errno 121] Remote I/O error":
+            return False
+    except Exception as ex:
+        logger.exception("Exception in is_mc_connected")
+
+def get_firmwareversion():
+    try:
+        out=[]
+        with SMBus(1) as bus:
+            b = bus.read_byte_data(I2C_MC_ADDRESS, I2C_ID)
+            out.append(b)
+        firmwareversion =  dec2hex(out)
+        if firmwareversion[0] == 22:
+            wittypi_firmwareversion = 'V1.02'
+        elif firmwareversion[0] == 24:
+            wittypi_firmwareversion = 'V1.04'
+        else:
+            wittypi_firmwareversion = str(firmwareversion[0])
+        return wittypi_firmwareversion
+    except Exception as ex:
+        logger.exception("Exception in get_firmwareversion")
 
 
 def get_rtc_timestamp(): 
@@ -81,7 +133,6 @@ def get_input_voltage():
     res = i + float(d)/100.
     return res
 
-
 def get_startup_time(): # [?? 07:00:00], ignore: [?? ??:??:00] and [?? ??:??:??]
     out=[]
     with SMBus(1) as bus:
@@ -103,38 +154,42 @@ def add_one_month(orig_date):
     new_day = min(orig_date.day, last_day_of_month)
     return orig_date.replace(year=new_year, month=new_month, day=new_day)
 
-
 def calcTime(res):
     """calculate startup/shutdown time from wittypi output"""
     nowUTC = dt.datetime.now(utc_tz)
     nowLOCAL = dt.datetime.now(local_tz)
     #  sec, min, hour, day
     if (res[-1] == 0): # [0, 0, 0] if day = 0 -> no time or date defined
-        startup_time_utc = dt.datetime(nowUTC.year+1,nowUTC.month,nowUTC.day,nowUTC.hour,nowUTC.minute,0) #.astimezone(utc_tz) # add 1 year
-        startup_time_utc = utc_tz.localize(startup_time_utc)
+        #time_utc = dt.datetime(nowUTC.year+1,nowUTC.month,nowUTC.day,nowUTC.hour,nowUTC.minute,0) #.astimezone(utc_tz) # add 1 year
+        #time_utc = utc_tz.localize(time_utc)
+        time_utc = None
     else:
         if (res[-1] == 80) and (res[-2] != 80): # day not defined, start every day
-            startup_time_utc = dt.datetime(nowUTC.year,nowUTC.month,nowUTC.day,res[-2],res[-3],0) #.astimezone(utc_tz)
-            startup_time_utc = utc_tz.localize(startup_time_utc)
-            if startup_time_utc < nowUTC: startup_time_utc += dt.timedelta(days=1)
+            time_utc = dt.datetime(nowUTC.year,nowUTC.month,nowUTC.day,res[-2],res[-3],0) #.astimezone(utc_tz)
+            time_utc = utc_tz.localize(time_utc)
+            if time_utc < nowUTC: time_utc += dt.timedelta(days=1)
         if (res[-1] != 80) and (res[-2] != 80): # day defined, start every month
-            startup_time_utc = dt.datetime(nowUTC.year,nowUTC.month,res[-1],res[-2],res[-3],0) #.astimezone(utc_tz)
-            startup_time_utc = utc_tz.localize(startup_time_utc)
-            if startup_time_utc < nowUTC: startup_time_utc = add_one_month(startup_time_utc)
+            time_utc = dt.datetime(nowUTC.year,nowUTC.month,res[-1],res[-2],res[-3],0) #.astimezone(utc_tz)
+            time_utc = utc_tz.localize(time_utc)
+            if time_utc < nowUTC: time_utc = add_one_month(time_utc)
         if (res[-1] == 80) and (res[-2] == 80): # day and hour not defined, start every hour
-            startup_time_utc = dt.datetime(nowUTC.year,nowUTC.month,nowUTC.day,nowUTC.hour,res[-3],0) #.astimezone(utc_tz)
-            startup_time_utc = utc_tz.localize(startup_time_utc)
-            if startup_time_utc < nowUTC: startup_time_utc += dt.timedelta(hours=1)
-    startup_time_local =  startup_time_utc.astimezone(local_tz)
-    strtime = [] # [0, 20, 80]
-    for ele in res:
-        if ele == 80: strtime.append('??')
-        else: strtime.append(str(ele))
-    if len(strtime) == 4: str_time = strtime[-1] + ' ' + strtime[-2] + ':' + strtime[-3] + ':' + strtime[-4]
-    else: str_time = strtime[-1] + ' ' + strtime[-2] + ':' + strtime[-3] + ':00' 
-    timedelta = startup_time_local - nowLOCAL
-    return startup_time_utc,startup_time_local,str_time,timedelta
-
+            time_utc = dt.datetime(nowUTC.year,nowUTC.month,nowUTC.day,nowUTC.hour,res[-3],0) #.astimezone(utc_tz)
+            time_utc = utc_tz.localize(time_utc)
+            if time_utc < nowUTC: time_utc += dt.timedelta(hours=1)
+    if time_utc is not None:
+        time_local =  time_utc.astimezone(local_tz)
+        strtime = [] # [0, 20, 80]
+        for ele in res:
+            if ele == 80: strtime.append('??')
+            else: strtime.append(str(ele))
+        if len(strtime) == 4: str_time = strtime[-1] + ' ' + strtime[-2] + ':' + strtime[-3] + ':' + strtime[-4]
+        else: str_time = strtime[-1] + ' ' + strtime[-2] + ':' + strtime[-3] + ':00' 
+        timedelta = time_local - nowLOCAL
+    else:
+        time_local = None
+        timedelta = None
+        str_time = None
+    return time_utc,time_local,str_time,timedelta
 
 def calcTimeOld(res):
     """calculate startup/shutdown time from wittypi output"""
@@ -163,9 +218,6 @@ def calcTimeOld(res):
     else: str_time = strtime[-1] + ' ' + strtime[-2] + ':' + strtime[-3] + ':00' 
     timedelta = startup_time_local - nowLOCAL
     return startup_time_utc,startup_time_local,str_time,timedelta
-
-
-
 
 def get_shutdown_time(): # [?? 07:00:00], ignore: [?? ??:??:00] and [?? ??:??:??]
     out=[]
@@ -201,7 +253,6 @@ def set_shutdown_time(stringtime='?? 20:00'):
         print(e)
         return False
 
-
 def set_startup_time(stringtime='?? 20:00'):
     try:
         day,hour,minute = stringtime2timetuple(stringtime=stringtime)
@@ -216,13 +267,11 @@ def set_startup_time(stringtime='?? 20:00'):
         print(e)
         return False
 
-
 def clear_shutdown_time():
     with SMBus(1) as bus:
         bus.write_byte_data(RTC_ADDRESS, 11,0) # write_byte_data(i2c_addr, register, value, force=None)
         bus.write_byte_data(RTC_ADDRESS, 12,0) # write_byte_data(i2c_addr, register, value, force=None)
         bus.write_byte_data(RTC_ADDRESS, 13,0) # write_byte_data(i2c_addr, register, value, force=None)
-
 
 def get_power_mode():
     with SMBus(1) as bus:
@@ -235,14 +284,11 @@ def get_output_voltage():
         d = bus.read_byte_data(I2C_MC_ADDRESS, I2C_VOLTAGE_OUT_D)
     return float(i) + float(d)/100.
 
-
 def get_output_current():
     with SMBus(1) as bus:
         i = bus.read_byte_data(I2C_MC_ADDRESS, I2C_CURRENT_OUT_I)
         d = bus.read_byte_data(I2C_MC_ADDRESS, I2C_CURRENT_OUT_D)
     return float(i) + float(d)/100.
-
-
 
 def get_low_voltage_threshold():
     with SMBus(1) as bus:
@@ -250,7 +296,6 @@ def get_low_voltage_threshold():
     if i == 255: thresh = 'disabled'
     else: thresh = float(i)/10.
     return thresh
-
 
 def get_recovery_voltage_threshold():
     with SMBus(1) as bus:
@@ -274,7 +319,6 @@ def set_low_voltage_threshold(volt='11.5'):
     else:
         print('wrong input for voltage threshold',volt)
         return False
-
 
 def set_recovery_voltage_threshold(volt='12.8'): 
     if len(volt) == 4:
@@ -308,7 +352,6 @@ def get_temperature():
         c += str(((t2&0xC0)>>6)*25 )
     return float(c)
 
-
 def getAll():
     wittypi = {}
     UTCtime,localtime,timestamp = get_rtc_timestamp()
@@ -321,4 +364,44 @@ def getAll():
     return wittypi
     
 
+def main():
+    try:
+        logging.basicConfig(level=logging.DEBUG)
+        print("WittyPi is connected: " + str(is_mc_connected()))
+        print("WittyPi RTC is connected: " + str(is_rtc_connected()))
+        firmwareversion = get_firmwareversion()
+        wittypi = {}
+        wittypi = getAll()
+        startup_time_utc,startup_time_local,startup_str_time,startup_timedelta = get_startup_time()
+        shutdown_time_utc,shutdown_time_local,shutdown_str_time,shutdown_timedelta = get_shutdown_time()
+        if startup_time_local is not None: 
+            str_startup_time_local = str(startup_time_local.strftime("%Y-%m-%d_%H-%M-%S"))
+        else: 
+            str_startup_time_local = "Never"
+        if shutdown_time_local is not None:
+            str_shutdown_time_local = str(shutdown_time_local.strftime("%Y-%m-%d_%H-%M-%S"))
+        else: 
+            str_shutdown_time_local = "Never"
+        print("Firmwareversion: " + str(firmwareversion))
+        print("WittyPi RTC Time: " + str(wittypi['DateTime']))
+        print('Next startup: ' + str_startup_time_local)
+        print('Next shutdown: ' + str_shutdown_time_local)
+        #print("WittyPi timestamp: " + str(wittypi['timestamp']))
+        print('\n')
+        print("WittyPi input voltage: " + str(wittypi['input_voltage']))
+        print("WittyPi output voltage: " + str(wittypi['output_voltage']))
+        print("WittyPi outputcurrent: " + str(wittypi['outputcurrent']))
+        print("WittyPi temperature: " + str(wittypi['temperature']))
+        print('\n')
+    except Exception as ex:
+        logger.critical("Unhandled Exception in main: " + repr(ex))
 
+if __name__ == '__main__':
+    try:
+        main()
+
+    except (KeyboardInterrupt, SystemExit):
+        close_script()
+
+    except Exception as ex:
+        logger.error("Unhandled Exception in __main__ " + repr(ex))
