@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: UTF-8 -*-
 
+
 #original from https://github.com/marl2en/wittypi4python
+#updated version on https://github.com/elschnorro77/wittypi4python
 
 """
 library for WittyPi 3 mini
@@ -109,6 +111,14 @@ def get_firmwareversion():
     except Exception as ex:
         logger.exception("Exception in get_firmwareversion")
 
+def get_dummy_load_duration():
+    try:
+        out=[]
+        with SMBus(1) as bus:
+            dummy_load_duration = bus.read_byte_data(I2C_MC_ADDRESS, I2C_CONF_DUMMY_LOAD)
+        return dummy_load_duration #[0]
+    except Exception as ex:
+        logger.exception("Exception in get_dummy_load_duration")
 
 def get_rtc_timestamp(): 
     out=[]
@@ -374,6 +384,7 @@ def main():
         wittypi = getAll()
         startup_time_utc,startup_time_local,startup_str_time,startup_timedelta = get_startup_time()
         shutdown_time_utc,shutdown_time_local,shutdown_str_time,shutdown_timedelta = get_shutdown_time()
+        dummy_load_duration = get_dummy_load_duration()
         if startup_time_local is not None: 
             str_startup_time_local = str(startup_time_local.strftime("%Y-%m-%d_%H-%M-%S"))
         else: 
@@ -393,6 +404,7 @@ def main():
         print("WittyPi outputcurrent: " + str(wittypi['outputcurrent']))
         print("WittyPi temperature: " + str(wittypi['temperature']))
         print('\n')
+        print("WittyPi dummy load duration: " + str(dummy_load_duration))
     except Exception as ex:
         logger.critical("Unhandled Exception in main: " + repr(ex))
 
