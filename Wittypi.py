@@ -495,6 +495,18 @@ def get_default_state(): #1=ON, 0=OFF
     except Exception as ex:
         logger.exception("Exception in get_default_state")
 
+def rtc_time_is_valid(rtc_time_utc):
+    try:
+        
+        if rtc_time_utc.strftime("%Y") == "1999" or rtc_time_utc.strftime("%Y") == "2000": # if you never set RTC time before
+            logger.debug('RTC time ' + rtc_time_utc.strftime("%a %d %b %Y %H:%M:%S")+ ' ' + str(utc_tz) + ' has not been set before (stays in year 1999/2000).')
+            return False
+        else:
+            logger.debug('RTC time ' + rtc_time_utc.strftime("%a %d %b %Y %H:%M:%S")+ ' ' + str(utc_tz) + ' is a valid time.')
+            return True
+    except Exception as ex:
+        logger.exception("Exception in get_default_state")    
+
 def getAll():
     wittypi = {}
     if is_rtc_connected():
@@ -503,6 +515,7 @@ def getAll():
         wittypi['rtc_time_utc'] = rtc_time_utc
         wittypi['rtc_time_local'] = rtc_time_local
         wittypi['rtc_timestamp'] = rtc_timestamp
+        wittypi['rtc_time_is_valid'] = rtc_time_is_valid(rtc_time_utc)
         startup_time_utc,startup_time_local,startup_str_time,startup_timedelta = get_startup_time()
         wittypi['startup_time_utc'] = startup_time_utc
         wittypi['startup_time_local'] = startup_time_local
@@ -522,7 +535,7 @@ def getAll():
         wittypi['input_voltage'] = get_input_voltage()
         wittypi['output_voltage'] = get_output_voltage()
         wittypi['outputcurrent'] = get_output_current()
-        wittypi['get_default_state'] = get_default_state()
+        wittypi['default_state'] = get_default_state()
         wittypi['dummy_load_duration'] = get_dummy_load_duration()
         wittypi['power_cut_delay'] = get_power_cut_delay()
         wittypi['pulsing_interval'] = get_pulsing_interval()
@@ -549,6 +562,8 @@ def main():
             print(">>> Your system time is:       " + str(dt.datetime.now(local_tz).strftime("%a %d %b %Y %H:%M:%S")) + " " +  str(local_tz))
             if wittypi['rtc_time_local'] is not None: 
                 print(">>> Your RTC time is:          " + str(wittypi['rtc_time_local'].strftime("%a %d %b %Y %H:%M:%S")) + " " + str(local_tz))
+                if not wittypi['rtc_time_is_valid']:
+                    print(">>> Your RTC time has not been set before (stays in year 1999/2000).")
             if wittypi['shutdown_time_local'] is not None:
                 str_shutdown_time_local = str(wittypi['shutdown_time_local'].strftime("%a %d %b %Y %H:%M:%S")) + " " +  str(local_tz)
             else: 
@@ -565,9 +580,9 @@ def main():
             print(">>> Vout=" + str(wittypi['output_voltage']) + "V, Iout=" + str(wittypi['outputcurrent']) + "A")
             print(">>> Vin= " + str(wittypi['input_voltage']) + "V")
             print(">>> Firmware version: " + str(wittypi['firmwareversion']))
-            if  wittypi['get_default_state'] == 0:
+            if  wittypi['default_state'] == 0:
                 print(">>> Default state when powered [OFF]")
-            if  wittypi['get_default_state'] == 1:
+            if  wittypi['default_state'] == 1:
                 print(">>> Default state when powered [ON]")
             print(">>> Power cut delay after shutdown. " + str(wittypi['power_cut_delay']) + "seconds")
             print(">>> Pulsing interval during sleep " + str(wittypi['pulsing_interval']) + "seconds")
