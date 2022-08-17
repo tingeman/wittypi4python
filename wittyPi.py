@@ -2,16 +2,19 @@
 # -*- coding: UTF-8 -*-
 
 
+# Original code:
 #original from https://github.com/marl2en/wittypi4python
 #updated version on https://github.com/elschnorro77/wittypi4python
 
+# This version is updated and tested with WittyPi 4
+# 2022-08-17 Thomas Ingeman-Nielsen
+
 """
-library for WittyPi 3 mini
-Version 3.50
+library for WittyPi 4
 """
 
 name = "wittypi"
-__version__ = '0.1.0'
+__version__ = '4.0.0'
 # pip3 install smbus2
 # pip3 install pytz
 
@@ -19,14 +22,14 @@ import logging
 from logging.handlers import RotatingFileHandler
 logger = logging.getLogger('WittyPi')
 
-
-
 import datetime as dt
 import calendar
 import time
 import pytz
 import os
 import re
+import math
+import pdb
 
 local_tz = dt.datetime.utcnow().astimezone().tzinfo
 #local_tz = pytz.timezone('Europe/Stockholm')
@@ -35,8 +38,8 @@ utc_tz = pytz.timezone('UTC')
 from smbus2 import SMBus
 import RPi.GPIO as GPIO
 
-RTC_ADDRESS = 0x68
-I2C_MC_ADDRESS = 0x69
+I2C_ADDRESS = 0x08   # Default WittyPi I2C address
+#RTC_ADDRESS = 0xXX   # No longer used, WittyPi remaps RTC I2C registers...
 
 I2C_ID=0
 I2C_VOLTAGE_IN_I=1
@@ -47,24 +50,37 @@ I2C_CURRENT_OUT_I=5
 I2C_CURRENT_OUT_D=6
 I2C_POWER_MODE=7
 I2C_LV_SHUTDOWN=8
+I2C_ALARM1_TRIGGERED=9
+I2C_ALARM2_TRIGGERED=10
+I2C_LAST_ACTION_CODE=11
+I2C_FIRMWARE_REV=12
 
-I2C_CONF_ADDRESS=9
-I2C_CONF_DEFAULT_ON=10
-I2C_CONF_PULSE_INTERVAL=11
-I2C_CONF_LOW_VOLTAGE=12
-I2C_CONF_BLINK_LED=13
-I2C_CONF_POWER_CUT_DELAY=14
-I2C_CONF_RECOVERY_VOLTAGE=15
-I2C_CONF_DUMMY_LOAD=16
-I2C_CONF_ADJ_VIN=17
-I2C_CONF_ADJ_VOUT=18
-I2C_CONF_ADJ_IOUT=19
+I2C_LM75B_TEMPERATURE=50
+
+
+I2C_CONF_ADDRESS=16
+I2C_CONF_DEFAULT_ON=17
+I2C_CONF_PULSE_INTERVAL=18
+I2C_CONF_LOW_VOLTAGE=19
+I2C_CONF_BLINK_LED=20
+I2C_CONF_POWER_CUT_DELAY=21
+I2C_CONF_RECOVERY_VOLTAGE=22
+I2C_CONF_DUMMY_LOAD=23
+I2C_CONF_ADJ_VIN=24
+I2C_CONF_ADJ_VOUT=25
+I2C_CONF_ADJ_IOUT=26
+
 
 HALT_PIN=4    # halt by GPIO-4 (BCM naming)
 SYSUP_PIN=17  # output SYS_UP signal on GPIO-17 (BCM naming)
 
 
+class NotTestedError(Exception):
+    pass
+
+
 def send_sysup():
+    raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
     try:
         GPIO.setmode(GPIO.BCM) # Counting the GPIO PINS on the board
         GPIO.setwarnings(False)
@@ -98,51 +114,54 @@ def dec2bcd(dec):
     except Exception as ex:
         logger.exception("Exception in dec2bcd " + str(ex))
 
-def is_rtc_connected():
-    try:
-        out=[]
-        with SMBus(1) as bus:
-            b = bus.read_byte(RTC_ADDRESS)
-            out.append(b)
-        logger.debug("RTC is connected")
-        return True
-    except IOError as ex:
-        if str(ex) == "[Errno 121] Remote I/O error":
-            logger.debug("RTC is not connected")
-            return False
-        if str(ex) == "[Errno 16] Device or resource busy":
-            logger.debug("RTC is busy - trying to remove module rtc-ds1307")
-            os.system('sudo rmmod rtc-ds1307')
-            try:
-                out=[]
-                with SMBus(1) as bus:
-                    b = bus.read_byte(RTC_ADDRESS)
-                    out.append(b)
-                logger.debug("RTC is connected")
-                return True
-            except IOError as ex:
-                if str(ex) == "[Errno 121] Remote I/O error":
-                    logger.debug("RTC is not connected")
-                    return False
-        else:
-            logger.exception("IOError in is_rtc_connected " + str(ex))
-    except Exception as ex:
-        logger.exception("Exception in is_rtc_connected " + str(ex))
+#def is_rtc_connected():
+#    raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
+#    try:
+#        out=[]
+#        with SMBus(1) as bus:
+#            b = bus.read_byte(RTC_ADDRESS)
+#            out.append(b)
+#        logger.debug("RTC is connected")
+#        return True
+#    except IOError as ex:
+#        if str(ex) == "[Errno 121] Remote I/O error":
+#            logger.debug("RTC is not connected")
+#            return False
+#        if str(ex) == "[Errno 16] Device or resource busy":
+#            logger.debug("RTC is busy - trying to remove module rtc-ds1307")
+#            os.system('sudo rmmod rtc-ds1307')
+#            try:
+#                out=[]
+#                with SMBus(1) as bus:
+#                    b = bus.read_byte(RTC_ADDRESS)
+#                    out.append(b)
+#                logger.debug("RTC is connected")
+#                return True
+#            except IOError as ex:
+#                if str(ex) == "[Errno 121] Remote I/O error":
+#                    logger.debug("RTC is not connected")
+#                    return False
+#        else:
+#            logger.exception("IOError in is_rtc_connected " + str(ex))
+#    except Exception as ex:
+#        logger.exception("Exception in is_rtc_connected " + str(ex))
 
-def is_mc_connected():
+def is_witty_pi_connected():
+    # Updated for Witty Pi 4
+    raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
     try:
         out=[]
         with SMBus(1) as bus:
-            b = bus.read_byte(I2C_MC_ADDRESS)
+            b = bus.read_byte(I2C_ADDRESS)
             out.append(b)
-        logger.debug("MC is connected")
+        logger.debug("Witty Pi is connected")
         return True
     except IOError as ex:
         if str(ex) == "[Errno 121] Remote I/O error":
-            logger.debug("MC is not connected")
+            logger.debug("Witty Pi is not connected")
             return False
     except Exception as ex:
-        logger.exception("Exception in is_mc_connected" + str(ex))
+        logger.exception("Exception in is_witty_pi_connected" + str(ex))
 
 def get_wittypi_folder():
     wittyPiPath = None
@@ -160,27 +179,29 @@ def get_wittypi_folder():
     return wittyPiPath
 
 
-rtc_connected = is_rtc_connected()
-mc_connected = is_mc_connected()
+witty_pi_connected = is_witty_pi_connected()
 wittyPiPath = get_wittypi_folder()
 
 
 def get_firmwareversion():
+    # Updated for Witty Pi 4
+    raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
     firmwareversion = 0
     try:
         out=[]
-        if mc_connected:
+        if witty_pi_connected:
             with SMBus(1) as bus:
-                b = bus.read_byte_data(I2C_MC_ADDRESS, I2C_ID)
+                b = bus.read_byte_data(I2C_ADDRESS, I2C_ID)
                 out.append(b)
             firmwareversion =  dec2hex(out)[0]
-        logger.debug("MC firmwareversion: "+ str(firmwareversion))
+        logger.debug("Witty Pi firmwareversion: "+ str(firmwareversion))
     except Exception as ex:
         logger.exception("Exception in get_firmwareversion"  + str(ex))
     return firmwareversion
 
 
 def get_rtc_timestamp():
+    raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
     out=[]
     UTCtime,localtime,timestamp = None, None, None
     try:
@@ -203,18 +224,21 @@ def get_rtc_timestamp():
 
 
 def get_input_voltage():
+    # Updated for Witty Pi 4
+    raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
     res = 0
     try:
-        if mc_connected:
+        if witty_pi_connected:
             with SMBus(1) as bus:
-                i = bus.read_byte_data(I2C_MC_ADDRESS, I2C_VOLTAGE_IN_I)
-                d = bus.read_byte_data(I2C_MC_ADDRESS, I2C_VOLTAGE_IN_D)
+                i = bus.read_byte_data(I2C_ADDRESS, I2C_VOLTAGE_IN_I)
+                d = bus.read_byte_data(I2C_ADDRESS, I2C_VOLTAGE_IN_D)
             res = i + float(d)/100.
     except Exception as ex:
         logger.exception("Exception in get_input_voltage" + str(ex))
     return res
 
 def get_startup_time(): # [?? 07:00:00], ignore: [?? ??:??:00] and [?? ??:??:??]
+    raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
     res = []
     try:
         if rtc_connected:
@@ -247,6 +271,7 @@ def add_one_month(orig_date):
 
 def calcTime(res=[0, 0, 0]):
     """calculate startup/shutdown time from wittypi output"""
+    raise NotTestedError('This function is not tested on output from Witty Pi 4 hardware!')
     time_local = None
     timedelta = None
     str_time = [] # [0, 20, 80]
@@ -316,6 +341,7 @@ def calcTime(res=[0, 0, 0]):
 
 def calcTimeOld(res):
     """calculate startup/shutdown time from wittypi output"""
+    raise NotTestedError('This function is not tested on output from Witty Pi 4 hardware!')
     nowUTC = dt.datetime.now(utc_tz)
     nowLOCAL = dt.datetime.now(local_tz)
     #  sec, min, hour, day
@@ -343,6 +369,7 @@ def calcTimeOld(res):
     return startup_time_utc,startup_time_local,str_time,timedelta
 
 def get_shutdown_time(): # [?? 07:00:00], ignore: [?? ??:??:00] and [?? ??:??:??]
+    raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
     res = []
     try:
         if rtc_connected:
@@ -366,6 +393,7 @@ def datetime2stringtime(dt):
 
 
 def stringtime2timetuple(stringtime='?? 20:00:00'):
+    raise NotTestedError('This function is not adapted for Witty Pi 4!')
     try:
         if stringtime is not None:
             logger.debug('stringtime: ' + str(stringtime))
@@ -412,6 +440,7 @@ def stringtime2timetuple(stringtime='?? 20:00:00'):
     return None
 
 def system_to_rtc():
+    raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
     try:
         if rtc_connected:
             sys_ts=dt.datetime.now(utc_tz)
@@ -436,6 +465,7 @@ def system_to_rtc():
     return False
 
 def rtc_to_system():
+    raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
     try:
         if rtc_connected:
             UTCtime,localtime,timestamp = get_rtc_timestamp()
@@ -452,6 +482,7 @@ def rtc_to_system():
     return False
 
 def set_shutdown_time(stringtime='?? 20:00'):
+    raise NotTestedError('This function is not updated for Witty Pi 4 hardware!')
     try:
         if rtc_connected:
             minute,hour,day = stringtime2timetuple(stringtime)
@@ -469,6 +500,7 @@ def set_shutdown_time(stringtime='?? 20:00'):
     return False
 
 def set_startup_time(stringtime='?? 20:00:00'):
+    raise NotTestedError('This function is not updated for Witty Pi 4 hardware!')
     try:
         if rtc_connected:
             second,minute,hour,day = stringtime2timetuple(stringtime)
@@ -487,6 +519,7 @@ def set_startup_time(stringtime='?? 20:00:00'):
     return False
 
 def clear_startup_time():
+    raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
     try:
         if rtc_connected:
             with SMBus(1) as bus:
@@ -500,6 +533,7 @@ def clear_startup_time():
     return False
 
 def clear_shutdown_time():
+    raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
     try:
         if rtc_connected:
             with SMBus(1) as bus:
@@ -512,39 +546,45 @@ def clear_shutdown_time():
     return False
 
 def get_power_mode():
+    raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
     try:
-        if mc_connected:
+        if witty_pi_connected:
             with SMBus(1) as bus:
-                b = bus.read_byte_data(I2C_MC_ADDRESS, I2C_POWER_MODE)
+                b = bus.read_byte_data(I2C_ADDRESS, I2C_POWER_MODE)
             return b # int 0 or 1
     except Exception as ex:
         logger.exception("Exception in get_power_mode" + str(ex))
 
 def get_output_voltage():
+    # Updated for Witty Pi 4
+    raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
     try:
-        if mc_connected:
+        if witty_pi_connected:
             with SMBus(1) as bus:
-                i = bus.read_byte_data(I2C_MC_ADDRESS, I2C_VOLTAGE_OUT_I)
-                d = bus.read_byte_data(I2C_MC_ADDRESS, I2C_VOLTAGE_OUT_D)
+                i = bus.read_byte_data(I2C_ADDRESS, I2C_VOLTAGE_OUT_I)
+                d = bus.read_byte_data(I2C_ADDRESS, I2C_VOLTAGE_OUT_D)
             return float(i) + float(d)/100.
     except Exception as ex:
         logger.exception("Exception in get_output_voltage" + str(ex))
 
 def get_output_current():
+    # Updated for Witty Pi 4
+    raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
     try:
-        if mc_connected:
+        if witty_pi_connected:
             with SMBus(1) as bus:
-                i = bus.read_byte_data(I2C_MC_ADDRESS, I2C_CURRENT_OUT_I)
-                d = bus.read_byte_data(I2C_MC_ADDRESS, I2C_CURRENT_OUT_D)
+                i = bus.read_byte_data(I2C_ADDRESS, I2C_CURRENT_OUT_I)
+                d = bus.read_byte_data(I2C_ADDRESS, I2C_CURRENT_OUT_D)
             return float(i) + float(d)/100.
     except Exception as ex:
         logger.exception("Exception in get_output_current" + str(ex))
 
 def get_low_voltage_threshold():
+    raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
     try:
-        if mc_connected:
+        if witty_pi_connected:
             with SMBus(1) as bus:
-                i = bus.read_byte_data(I2C_MC_ADDRESS, I2C_CONF_LOW_VOLTAGE)
+                i = bus.read_byte_data(I2C_ADDRESS, I2C_CONF_LOW_VOLTAGE)
             if i == 255: thresh = 'disabled'
             else: thresh = float(i)/10.
             return thresh
@@ -552,10 +592,11 @@ def get_low_voltage_threshold():
         logger.exception("Exception in get_low_voltage_threshold" + str(ex))
 
 def get_recovery_voltage_threshold():
+    raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
     try:
-        if mc_connected:
+        if witty_pi_connected:
             with SMBus(1) as bus:
-                i = bus.read_byte_data(I2C_MC_ADDRESS, I2C_CONF_RECOVERY_VOLTAGE)
+                i = bus.read_byte_data(I2C_ADDRESS, I2C_CONF_RECOVERY_VOLTAGE)
             if i == 255: thresh = 'disabled'
             else: thresh = float(i)/10.
             return thresh
@@ -563,15 +604,16 @@ def get_recovery_voltage_threshold():
         logger.exception("Exception in get_recovery_voltage_threshold" + str(ex))
 
 def set_low_voltage_threshold(volt='11.5'):
+    raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
     try:
-        if mc_connected:
+        if witty_pi_connected:
             if len(volt) == 4:
                 volt = int(float(volt) * 10.)
                 if not (50 < volt < 254): volt = 255 # clear threshold if threshold is not between 5V and 25.4V
                 else: print(' setting threshold to ',volt)
                 try:
                     with SMBus(1) as bus:
-                        bus.write_byte_data(I2C_MC_ADDRESS, I2C_CONF_LOW_VOLTAGE,volt)
+                        bus.write_byte_data(I2C_ADDRESS, I2C_CONF_LOW_VOLTAGE,volt)
                     return True
                 except Exception as e:
                     print(e)
@@ -583,8 +625,9 @@ def set_low_voltage_threshold(volt='11.5'):
         logger.exception("Exception in set_low_voltage_threshold" + str(ex))
 
 def set_recovery_voltage_threshold(volt='12.8'):
+    raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
     try:
-        if mc_connected:
+        if witty_pi_connected:
             if len(volt) == 4:
                 volt = int(float(volt) * 10.)
                 if not (50 < volt < 254):
@@ -592,7 +635,7 @@ def set_recovery_voltage_threshold(volt='12.8'):
                 else:
                     print(' setting threshold to ',volt)
                     with SMBus(1) as bus:
-                        bus.write_byte_data(I2C_MC_ADDRESS, I2C_CONF_RECOVERY_VOLTAGE,volt)
+                        bus.write_byte_data(I2C_ADDRESS, I2C_CONF_RECOVERY_VOLTAGE,volt)
                     return True
             else:
                 logger.error('wrong input for voltage threshold ' + str(volt))
@@ -601,46 +644,89 @@ def set_recovery_voltage_threshold(volt='12.8'):
     return False
 
 def clear_low_voltage_threshold():
+    raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
     try:
-        if mc_connected:
+        if witty_pi_connected:
             with SMBus(1) as bus:
-                bus.write_byte_data(I2C_MC_ADDRESS, I2C_CONF_LOW_VOLTAGE, 0xFF)
+                bus.write_byte_data(I2C_ADDRESS, I2C_CONF_LOW_VOLTAGE, 0xFF)
             return True
     except Exception as ex:
         logger.exception("Exception in clear_low_voltage_threshold " + str(ex))
     return False
 
 def clear_recovery_voltage_threshold():
+    raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
     try:
-        if mc_connected:
+        if witty_pi_connected:
             with SMBus(1) as bus:
-                bus.write_byte_data(I2C_MC_ADDRESS, I2C_CONF_RECOVERY_VOLTAGE, 0xFF)
+                bus.write_byte_data(I2C_ADDRESS, I2C_CONF_RECOVERY_VOLTAGE, 0xFF)
             return True
     except Exception as ex:
         logger.exception("Exception in clear_recovery_voltage_threshold " + str(ex))
     return False
 
+
+hex_byte_pattern = re.compile("^0x[0-9a-fA-F]{2}")
+hex_word_pattern = re.compile("^0x[0-9a-fA-F]{4}")
+
 def get_temperature():
+    # Updated for Witty Pi 4
+    raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
+    max_count = 100
+    temp_C = math.nan
+    
     try:
-        if rtc_connected:
+        if witty_pi_connected:
             with SMBus(1) as bus:
-                ctrl = bus.read_byte_data(RTC_ADDRESS, 14)
-                ctrl2 = 7|0x20 #39 bitwise or
-                bus.write_byte_data(RTC_ADDRESS, 14,ctrl2)
-                time.sleep(0.2)
-                t1 = bus.read_byte_data(RTC_ADDRESS, 0x11)
-                t2 = bus.read_byte_data(RTC_ADDRESS, 0x12)
-                c = ''
-                sign = t1&0x80
-                if sign < 0: c+='-'
-                else: c += str(t1&0x7F)
-                c+='.'
-                c += str(((t2&0xC0)>>6)*25 )
-            return float(c)
+                data = bus.read_word_data(I2C_ADDRESS, I2C_LM75B_TEMPERATURE)
+                pdb.set_trace()
+                
+                while max_count > 0:
+                    if hex_word_pattern.match(data):
+                        if data >= 0x400:
+                            data = (data & 0x3FF) - 1024
+                        temp_C = data * 0.125
+                    else:
+                        time.sleep(0.1)
+                        max_count -= 1
+                        temp_C = get_temperature()
+                
+                if math.isnan(temp_C):
+                    raise IOError('Could not retrieve temperature.')
+                
+                return temp_C
     except Exception as ex:
         logger.exception("Exception in get_temperature" + str(ex))
 
+# get_temperature()
+# {
+#   local data=$(i2cget -y 1 $I2C_MC_ADDRESS $I2C_LM75B_TEMPERATURE w)
+# 
+#   #if [[ $data =~ ^0x[0-9a-fA-F]{4}$ && $data != 0xffff ]]; then
+#   if [[ $data =~ ^0x[0-9a-fA-F]{4}$ ]]; then
+#     data=$(( ((($data&0xFF)<<8)|(($data&0xFF00)>>8))>>5 ))
+#     if [[ $data -ge 0x400 ]] ; then
+#       data=$(( ($data&0x3FF)-1024 ))
+#     fi
+#     local c=$(calc $data*0.125)
+#     echo -n "$c$(echo $'\xc2\xb0'C)"
+#     if hash awk 2>/dev/null; then
+#       local f=$(awk "BEGIN { print $c*1.8+32 }")
+#       echo " / $f$(echo $'\xc2\xb0'F)"
+#     else
+#       echo ''
+#     fi
+#   else
+#     sleep 0.1
+#     get_temperature
+#   fi
+# }
+
+
+
+
 def clear_alarm_flags(byte_F=0x0):
+    raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
     try:
         if rtc_connected:
             if byte_F==0x0:
@@ -655,6 +741,7 @@ def clear_alarm_flags(byte_F=0x0):
         logger.exception("Exception in clear_alarm_flags" + str(ex))
 
 def get_alarm_flags(RTC_ALARM_ADDRESS=0x0F):
+    raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
     try:
         if rtc_connected:
             with SMBus(1) as bus:
@@ -665,25 +752,27 @@ def get_alarm_flags(RTC_ALARM_ADDRESS=0x0F):
         logger.exception("Exception in clear_alarm_flags" + str(ex))
 
 def get_power_cut_delay():
+    raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
     try:
-        if mc_connected:
+        if witty_pi_connected:
             with SMBus(1) as bus:
-                pcd = bus.read_byte_data(I2C_MC_ADDRESS, I2C_CONF_POWER_CUT_DELAY)
+                pcd = bus.read_byte_data(I2C_ADDRESS, I2C_CONF_POWER_CUT_DELAY)
             pcd=pcd/10
             return pcd
     except Exception as ex:
         logger.exception("Exception in get_power_cut_delay" + str(ex))
 
 def set_power_cut_delay(delay=8):
+    raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
     try:
-        if mc_connected:
+        if witty_pi_connected:
             maxVal=8.0;
             if get_firmwareversion() >= 35:
                 maxVal='25.0'
             if delay >= 0 and delay <= maxVal:
                 d=delay*10
                 with SMBus(1) as bus:
-                    bus.write_byte_data(I2C_MC_ADDRESS, I2C_CONF_POWER_CUT_DELAY, d)
+                    bus.write_byte_data(I2C_ADDRESS, I2C_CONF_POWER_CUT_DELAY, d)
                 logger.debug("Power cut delay set to ", delay , " seconds!")
                 return True
             else:
@@ -693,20 +782,22 @@ def set_power_cut_delay(delay=8):
     return False
 
 def get_dummy_load_duration():
+    raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
     try:
-        if mc_connected:
+        if witty_pi_connected:
             with SMBus(1) as bus:
-                dummy_load_duration = bus.read_byte_data(I2C_MC_ADDRESS, I2C_CONF_DUMMY_LOAD)
+                dummy_load_duration = bus.read_byte_data(I2C_ADDRESS, I2C_CONF_DUMMY_LOAD)
             return dummy_load_duration #[0]
     except Exception as ex:
         logger.exception("Exception in get_dummy_load_duration" + str(ex))
 
 def set_dummy_load_duration(duration=0):
+    raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
     try:
-        if mc_connected:
+        if witty_pi_connected:
             if duration >=- 0 and duration <= 254:
                 with SMBus(1) as bus:
-                    bus.write_byte_data(I2C_MC_ADDRESS, I2C_CONF_DUMMY_LOAD, duration)
+                    bus.write_byte_data(I2C_ADDRESS, I2C_CONF_DUMMY_LOAD, duration)
                 logger.debug("Dummy load duration set to " + str(duration) + " !")
                 return True
             else:
@@ -716,8 +807,9 @@ def set_dummy_load_duration(duration=0):
     return False
 
 def set_pulsing_interval(interval):
+    raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
     try:
-        if mc_connected:
+        if witty_pi_connected:
             pi = None
             if interval==1:
                 pi = 0x06
@@ -731,7 +823,7 @@ def set_pulsing_interval(interval):
                 logger.error('wrong input for pulsing invterval' +str(interval) + ' Please input 1,2,4 or 8 seconds')
             if pi is not None:
                 with SMBus(1) as bus:
-                    bus.write_byte_data(I2C_MC_ADDRESS, I2C_CONF_PULSE_INTERVAL, pi)
+                    bus.write_byte_data(I2C_ADDRESS, I2C_CONF_PULSE_INTERVAL, pi)
                 logger.debug("Pulsing interval set to " + str(interval) + "seconds")
                 return True
     except Exception as ex:
@@ -739,11 +831,12 @@ def set_pulsing_interval(interval):
     return False
 
 def get_pulsing_interval():
+    raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
     try:
-        if mc_connected:
+        if witty_pi_connected:
             interval = None
             with SMBus(1) as bus:
-                pi = bus.read_byte_data(I2C_MC_ADDRESS, I2C_CONF_PULSE_INTERVAL)
+                pi = bus.read_byte_data(I2C_ADDRESS, I2C_CONF_PULSE_INTERVAL)
             if pi == 0x09:
                 interval=8
             elif pi == 0x07:
@@ -757,11 +850,12 @@ def get_pulsing_interval():
         logger.exception("Exception in get_pulsing_interval" + str(ex))
 
 def set_white_led_duration(duration):
+    raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
     try:
-        if mc_connected:
+        if witty_pi_connected:
             if duration >=- 0 and duration <= 254:
                     with SMBus(1) as bus:
-                        bus.write_byte_data(I2C_MC_ADDRESS, I2C_CONF_BLINK_LED, duration)
+                        bus.write_byte_data(I2C_ADDRESS, I2C_CONF_BLINK_LED, duration)
                         logger.debug("White LED duration set to "+ str(duration) + " !")
             else:
                 logger.error('wrong input for white LED duration ' + str(duration) + ' Please input from 0 to 254')
@@ -770,17 +864,19 @@ def set_white_led_duration(duration):
     return False
 
 def get_white_led_duration():
+    raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
     try:
-        if mc_connected:
+        if witty_pi_connected:
             with SMBus(1) as bus:
-                duration = bus.read_byte_data(I2C_MC_ADDRESS, I2C_CONF_BLINK_LED)
+                duration = bus.read_byte_data(I2C_ADDRESS, I2C_CONF_BLINK_LED)
             return duration
     except Exception as ex:
         logger.exception("Exception in get_white_led_duration" + str(ex))
 
 def set_default_state(state):
+    raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
     try:
-        if mc_connected:
+        if witty_pi_connected:
             if int(state)>=0 and int(state)<=1:
                 hexstate = None
                 if int(state)==1:
@@ -788,7 +884,7 @@ def set_default_state(state):
                 elif int(state)==0:
                     hexstate = 0x00
                 with SMBus(1) as bus:
-                    bus.write_byte_data(I2C_MC_ADDRESS, I2C_CONF_DEFAULT_ON, hexstate)
+                    bus.write_byte_data(I2C_ADDRESS, I2C_CONF_DEFAULT_ON, hexstate)
                 if hexstate == 0x01:
                     logger.debug('Default state when powered set to "ON"!')
                 elif hexstate == 0x00:
@@ -801,10 +897,11 @@ def set_default_state(state):
     return False
 
 def get_default_state(): #1=ON, 0=OFF
+    raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
     try:
-        if mc_connected:
+        if witty_pi_connected:
             with SMBus(1) as bus:
-                hexstate = bus.read_byte_data(I2C_MC_ADDRESS, I2C_CONF_DEFAULT_ON)
+                hexstate = bus.read_byte_data(I2C_ADDRESS, I2C_CONF_DEFAULT_ON)
             if hexstate == 0x01:
                 state=1
             elif hexstate == 0x00:
@@ -814,6 +911,7 @@ def get_default_state(): #1=ON, 0=OFF
         logger.exception("Exception in get_default_state" + str(ex))
 
 def rtc_time_is_valid(rtc_time_utc):
+    raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
     try:
 
         if rtc_time_utc.strftime("%Y") == "1999" or rtc_time_utc.strftime("%Y") == "2000": # if you never set RTC time before
@@ -826,6 +924,7 @@ def rtc_time_is_valid(rtc_time_utc):
         logger.exception("Exception in rtc_time_is_valid" + str(ex))
 
 def is_schedule_file_in_use(schedule_file = str(wittyPiPath) + '/schedule.wpi'):
+    raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
 
     if os.path.isfile(schedule_file) and os.stat(schedule_file).st_size > 1:
         return True
@@ -833,6 +932,7 @@ def is_schedule_file_in_use(schedule_file = str(wittyPiPath) + '/schedule.wpi'):
         return False
 
 def extract_timestamp(datetimestr):
+    raise NotTestedError('This function is not tested on output from Witty Pi 4 hardware!')
     timestamp = None
     try:
         datetimestr = datetimestr.split(' ')
@@ -850,6 +950,7 @@ def extract_timestamp(datetimestr):
     return timestamp
 
 def get_local_date_time(timestr, wildcard=True):
+    raise NotTestedError('This function is not adapted for Witty Pi 4 hardware!')
     result = None
     try:
         nowUTC = dt.datetime.now(utc_tz)
@@ -916,6 +1017,7 @@ def get_local_date_time(timestr, wildcard=True):
 
 
 def schedule_script_interrupted():
+    raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
     try:
         startup_time_utc,startup_time_local,startup_str_time,startup_timedelta = get_startup_time()
         shutdown_time_utc,shutdown_time_local,shutdown_str_time,shutdown_timedelta = get_shutdown_time()
@@ -934,6 +1036,7 @@ def schedule_script_interrupted():
 
 
 def get_schedule_file(schedule_file = str(wittyPiPath) + '/schedule.wpi'):
+    raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
     schedule_file_lines = []
     try:
         if is_schedule_file_in_use(schedule_file):
@@ -947,6 +1050,7 @@ def get_schedule_file(schedule_file = str(wittyPiPath) + '/schedule.wpi'):
     return schedule_file_lines
 
 def schedule_file_lines2schedule_file_data(schedule_file_lines):
+    raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
     begin = None
     end = None
     states = []
@@ -981,6 +1085,7 @@ def schedule_file_lines2schedule_file_data(schedule_file_lines):
     return schedule_file_data
 
 def extract_duration(state):
+    raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
     duration=0
     try:
         #print(str(state))
@@ -1006,6 +1111,7 @@ def extract_duration(state):
     return duration
 
 def verify_schedule_data(schedule_file_data):
+    raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
     begin = None
     beginissue=""
     end = None
@@ -1093,6 +1199,7 @@ def verify_schedule_data(schedule_file_data):
     return count, script_duration, found_off, found_on, found_irregular, found_irregular_order, found_off_wait, found_on_wait, beginissue, endissue
 
 def process_schedule_data(schedule_file_data):
+    raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
     begin = None
     end = None
     states = []
@@ -1219,6 +1326,7 @@ def process_schedule_data(schedule_file_data):
 
 
 def getAll():
+    raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
     wittypi = {}
     wittypi['is_rtc_connected'] = is_rtc_connected()
     if wittypi['is_rtc_connected']:
@@ -1240,9 +1348,9 @@ def getAll():
         wittypi['shutdown_timedelta'] = shutdown_timedelta
         wittypi['temperature'] = get_temperature()
         wittypi['alarm_flags'] = get_alarm_flags()
-    wittypi['is_mc_connected'] = is_mc_connected()
-    if wittypi['is_mc_connected']:
-        wittypi['is_mc_connected'] = True
+    wittypi['is_witty_pi_connected'] = is_witty_pi_connected()
+    if wittypi['is_witty_pi_connected']:
+        wittypi['is_witty_pi_connected'] = True
         wittypi['firmwareversion'] = get_firmwareversion()
         wittypi['input_voltage'] = get_input_voltage()
         wittypi['output_voltage'] = get_output_voltage()
@@ -1262,6 +1370,7 @@ def getAll():
 
 
 def main():
+    raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
     try:
         logging.basicConfig(level=logging.INFO)
         wittypi = {}
@@ -1293,7 +1402,7 @@ def main():
             print(">>> RTC Alarm flags: " +  format(wittypi['alarm_flags'], '0>8b'))
         else:
             print("no WittyPi RTC is connected")
-        if wittypi['is_mc_connected']:
+        if wittypi['is_witty_pi_connected']:
             print(">>> Vout=" + str(wittypi['output_voltage']) + "V, Iout=" + str(wittypi['outputcurrent']) + "A")
             print(">>> Vin= " + str(wittypi['input_voltage']) + "V")
             print(">>> low voltage threshold= " + str(wittypi['low_voltage_threshold']))
