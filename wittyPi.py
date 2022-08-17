@@ -148,7 +148,7 @@ def dec2bcd(dec):
 
 def is_witty_pi_connected():
     # Updated for Witty Pi 4
-    raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
+    #raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
     try:
         out=[]
         with SMBus(1) as bus:
@@ -185,7 +185,7 @@ wittyPiPath = get_wittypi_folder()
 
 def get_firmwareversion():
     # Updated for Witty Pi 4
-    raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
+    #raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
     firmwareversion = 0
     try:
         out=[]
@@ -225,7 +225,7 @@ def get_rtc_timestamp():
 
 def get_input_voltage():
     # Updated for Witty Pi 4
-    raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
+    #raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
     res = 0
     try:
         if witty_pi_connected:
@@ -557,7 +557,7 @@ def get_power_mode():
 
 def get_output_voltage():
     # Updated for Witty Pi 4
-    raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
+    #raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
     try:
         if witty_pi_connected:
             with SMBus(1) as bus:
@@ -569,7 +569,7 @@ def get_output_voltage():
 
 def get_output_current():
     # Updated for Witty Pi 4
-    raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
+    #raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
     try:
         if witty_pi_connected:
             with SMBus(1) as bus:
@@ -671,25 +671,21 @@ hex_word_pattern = re.compile("^0x[0-9a-fA-F]{4}")
 
 def get_temperature():
     # Updated for Witty Pi 4
-    raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
+    #raise NotTestedError('This function is not tested on Witty Pi 4 hardware!')
     max_count = 100
     temp_C = math.nan
     
     try:
         if witty_pi_connected:
             with SMBus(1) as bus:
-                data = bus.read_word_data(I2C_ADDRESS, I2C_LM75B_TEMPERATURE)
-                pdb.set_trace()
                 
-                while max_count > 0:
-                    if hex_word_pattern.match(data):
-                        if data >= 0x400:
-                            data = (data & 0x3FF) - 1024
-                        temp_C = data * 0.125
-                    else:
-                        time.sleep(0.1)
-                        max_count -= 1
-                        temp_C = get_temperature()
+                data = bus.read_word_data(I2C_ADDRESS, I2C_LM75B_TEMPERATURE)
+                #data = bus.read_i2c_block_data(I2C_ADDRESS, I2C_LM75B_TEMPERATURE, 2)
+                
+                data = ((((data&0xFF)<<8)|((data&0xFF00)>>8))>>5)
+                if data >= 0x400:
+                    data = (data & 0x3FF) - 1024
+                temp_C = data * 0.125
                 
                 if math.isnan(temp_C):
                     raise IOError('Could not retrieve temperature.')
